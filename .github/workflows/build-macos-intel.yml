@@ -1,0 +1,75 @@
+name: build-macos-intel
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build-intel:
+    runs-on: macos-13
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version/tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && -n "${GITHUB_REF_NAME}" ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+            echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          else
+            VERSION=$(python - <<'PY'
+from pathlib import Path
+import re
+m=re.search(r'APP_VERSION\s*=\s*"([^"]+)"', Path('app/config.py').read_text())
+print(m.group(1))
+PY
+)
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "TAG=v${VERSION}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          brew install pandoc
+
+      - name: Stage pandoc binary
+        run: |
+          mkdir -p build/pandoc/mac
+          cp "$(which pandoc)" build/pandoc/mac/pandoc
+
+      - name: Build app (x86_64)
+        shell: bash
+        run: |
+          pyinstaller --name "Resume Formatter" --windowed \
+            --add-data "app/views:app/views" \
+            --add-data "templates:templates" \
+            --collect-all jinja2 \
+            --collect-all docx \
+            --add-binary "build/pandoc/mac/pandoc:bin" \
+            run_app.py
+
+      - name: Zip app
+        shell: bash
+        run: |
+          cd dist
+          zip -ry "Resume-Formatter-macOS-x86_64-${{ env.VERSION }}.zip" "Resume Formatter.app"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: dist/Resume-Formatter-macOS-x86_64-${{ env.VERSION }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
