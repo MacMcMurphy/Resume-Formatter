@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Resume Formatter</title>
+	<style>
+		body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+		.container { max-width: 760px; margin: 0 auto; }
+		footer { margin-top: 32px; color: #666; font-size: 12px; }
+		pre { background: #f6f8fa; padding: 12px; overflow: auto; }
+		#loader {
+			display: none;
+			width: 100%;
+			height: 4px;
+			background-color: #f3f3f3;
+			border-radius: 2px;
+			margin-top: 16px;
+			overflow: hidden;
+		}
+		#loader-bar {
+			width: 0;
+			height: 100%;
+			background-color: #4caf50;
+			transition: width 0.2s linear;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div id="apiKeyBar" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+			<button id="toggleKey" type="button">Set OpenAI API Key</button>
+			<span id="keyStatus" style="font-size:12px; color:#555;">Key: unknown</span>
+		</div>
+		<div id="apiKeyPanel" style="display:none; margin-bottom:16px; padding:8px; border:1px solid #ddd; background:#f9f9f9;">
+			<label style="display:block; margin-bottom:6px;">OpenAI API Key</label>
+			<input type="password" id="apiKeyInput" placeholder="sk-..." style="width:100%; padding:8px; border:1px solid #ccc;" />
+			<div style="margin-top:8px; display:flex; gap:8px;">
+				<button id="saveKeyBtn" type="button">Save Key</button>
+				<button id="cancelKeyBtn" type="button">Cancel</button>
+			</div>
+		</div>
+		<h1>Resume Formatter</h1>
+		<p>Upload a PDF resume. The app will extract content, normalize it, and generate a DOCX using your Word template.</p>
+		<form id="uploadForm">
+			<input type="file" id="file" name="file" accept="application/pdf" required />
+			<button type="submit" id="processBtn">Upload</button>
+		</form>
+		<div id="piiStep" style="display:none; margin-top:16px;">
+			<h3>Raw Text Viewer (PII Review)</h3>
+			<label>Name: <input type="text" id="candidateName" placeholder="e.g., Jane Doe" /></label>
+			<div style="margin-top:8px; display:flex; gap:12px; align-items:center;">
+				<label style="flex:0 0 160px;">Honorific:
+					<select id="honorific" style="width:100%;">
+						<option value="Mr.">Mr.</option>
+						<option value="Ms.">Ms.</option>
+					</select>
+				</label>
+				<label style="flex:1;">Title: <input type="text" id="candidateTitle" placeholder="e.g., Java Full Stack Developer" style="width:100%;" /></label>
+				<label style="flex:1;">Experience Level:
+					<select id="experienceLevel" style="width:100%;">
+						<option value="Journeyman">Journeyman</option>
+						<option value="Senior" selected>Senior</option>
+						<option value="SME">SME</option>
+						<option value="Custom">Custom</option>
+					</select>
+				</label>
+			</div>
+			<div id="experienceCustomRow" style="display:none; margin-top:6px;">
+				<label>Custom Experience Level: <input type="text" id="experienceCustom" placeholder="e.g., Lead" /></label>
+			</div>
+			<div style="margin:8px 0;">
+				<button id="deleteHighlightedBtn" type="button">Delete highlighted</button>
+				<button id="undoBtn" type="button">Undo</button>
+				<button id="continueBtn" type="button">Continue</button>
+			</div>
+			<div id="piiLegend" style="font-size:12px; color:#555; margin-bottom:6px;"></div>
+			<div id="rawEditor" contenteditable="true" style="width:100%; min-height:320px; padding:8px; border:1px solid #ddd; background:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; line-height:1.5; white-space: pre-wrap;"></div>
+		</div>
+		<div id="loader"><div id="loader-bar"></div></div>
+		<div id="result" style="margin-top:16px;"></div>
+		<footer>Version {{ version }}</footer>
+	</div>
+	<script>
+	const form = document.getElementById('uploadForm');
+	const loader = document.getElementById('loader');
+	const bar = document.getElementById('loader-bar');
+	const out = document.getElementById('result');
+	const btn = document.getElementById('processBtn');
+	// Progress phases (defaults)
+	let BASELINE_MS = 20000; // 0 -> 80% in 20s
+	let CREEP1_MS = 15000;   // 80 -> 90% in 15s
+	let CREEP2_MS = 20000;   // 90 -> 95% in 20s
+	let CREEP3_MS = 30000;   // 95 -> 100% in 30s
+	const PHASE_BASELINE = 0, PHASE_CREEP1 = 1, PHASE_CREEP2 = 2, PHASE_CREEP3 = 3;
+	let timer = null;
+	let phase = PHASE_BASELINE;
+	let phaseStart = 0;
+
+	function startProgress() {
+		loader.style.display = 'block';
+		bar.style.width = '0%';
+		phase = PHASE_BASELINE;
+		phaseStart = Date.now();
+		if (timer) clearInterval(timer);
+		timer = setInterval(() => {
+			const now = Date.now();
+			const elapsed = now - phaseStart;
+			let pct = 0;
+			switch (phase) {
+				case PHASE_BASELINE: // 0 -> 80
+					pct = Math.min(80, (elapsed / BASELINE_MS) * 80);
+					if (pct >= 80) { phase = PHASE_CREEP1; phaseStart = now; }
+					break;
+				case PHASE_CREEP1: // 80 -> 90
+					pct = 80 + Math.min(10, (elapsed / CREEP1_MS) * 10);
+					if (pct >= 90) { phase = PHASE_CREEP2; phaseStart = now; }
+					break;
+				case PHASE_CREEP2: // 90 -> 95
+					pct = 90 + Math.min(5, (elapsed / CREEP2_MS) * 5);
+					if (pct >= 95) { phase = PHASE_CREEP3; phaseStart = now; }
+					break;
+				case PHASE_CREEP3: // 95 -> 100 (very slow)
+					pct = 95 + Math.min(5, (elapsed / CREEP3_MS) * 5);
+					break;
+			}
+			bar.style.width = pct.toFixed(2) + '%';
+		}, 120);
+	}
+
+	function finishProgress() {
+		if (timer) clearInterval(timer);
+		const prevTransition = bar.style.transition;
+		bar.style.transition = 'width 1.2s ease';
+		bar.style.width = '100%';
+		setTimeout(() => {
+			loader.style.display = 'none';
+			bar.style.width = '0%';
+			bar.style.transition = prevTransition; // reset to default
+		}, 1300);
+	}
+
+	let currentRunDir = null;
+	let currentRawText = '';
+
+	function escapeHtml(s){
+		return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+	}
+
+	// Simple PII regexes mirroring backend
+	const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+	const PHONE_RE = /(?:(?:\+?1[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4})/g;
+	const ADDRESS_RE = /\d+\s+[^\n,]+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.|Lane|Ln\.|Drive|Dr\.)/gi;
+	// URL detection: http(s)://..., www..., and bare domains with TLD
+	const URL_RE = /(?:(?:https?:\/\/)[^\s)]+|(?:www\.[^\s)]+)|\b[a-zA-Z0-9.-]+\.(?:com|org|net|io|ai|co|edu|gov|us|uk|ca|de|fr|au|in|nz)(?:\/[\w\-./?%&=+#]*)?)/g;
+
+	// Name highlighter will be set dynamically after we know the candidate name override; until then, try to guess from the first line tokens
+	let NAME_RE = null;       // matches name parts (first/last)
+	let FULLNAME_RE = null;   // matches full name as a single span
+
+	function buildNameRegexFromGuess(text){
+		const head = text.split(/\n/).slice(0, 3).join(' ').trim();
+		const cleaned = head.replace(/^(resume|curriculum vitae|cv)[:\s,\-]*?/i, '');
+		// Build patterns that allow Title Case or ALL CAPS, optional middle initial or middle name
+		const word = "(?:[A-Z][a-zA-Z'\-]+|[A-Z]{2,})";
+		const initial = "(?:[A-Z]\.)";
+		const middle = `(?:\s+(?:${initial}|${word}))?`;
+		const fullPat = new RegExp(`\b(${word})${middle}\s+(${word})\b`);
+		const m = cleaned.match(fullPat);
+		if (m){
+			const candidate = m[0].trim();
+			try {
+				FULLNAME_RE = new RegExp(`\\b${candidate.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi');
+			} catch { FULLNAME_RE = null; }
+			const parts = candidate.split(/\s+/).filter(Boolean);
+			const uniq = Array.from(new Set(parts));
+			const pat = `\\b(?:${uniq.map(p=>p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})\\b`;
+			try { NAME_RE = new RegExp(pat, 'gi'); } catch { NAME_RE = null; }
+			return NAME_RE;
+		}
+		return null;
+	}
+
+	function setNameRegexFromInput(name){
+		if (!name) { NAME_RE = null; FULLNAME_RE = null; return; }
+		const parts = name.trim().split(/\s+/);
+		const uniq = Array.from(new Set(parts.filter(Boolean)));
+		if (!uniq.length) { NAME_RE = null; return; }
+		const pat = `\\b(?:${uniq.map(p=>p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})\\b`;
+		try { NAME_RE = new RegExp(pat, 'gi'); } catch { NAME_RE = null; }
+		try { FULLNAME_RE = new RegExp(`\\b${name.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi'); } catch { FULLNAME_RE = null; }
+	}
+
+	function highlightPII(text){
+		const container = document.createElement('div');
+		container.textContent = text;
+		// Priority order prevents overlaps (email before URL, phone before address)
+		const rules = [
+			{ re: EMAIL_RE, cls: 'hl-email' },
+			{ re: PHONE_RE, cls: 'hl-phone' },
+			{ re: URL_RE, cls: 'hl-url' },
+			{ re: ADDRESS_RE, cls: 'hl-address' },
+		];
+		if (!NAME_RE){ NAME_RE = buildNameRegexFromGuess(text); }
+		// Highlight full name first (single contiguous span), then any remaining name parts
+		if (FULLNAME_RE){ rules.unshift({ re: FULLNAME_RE, cls: 'hl-name' }); }
+		if (NAME_RE){ rules.push({ re: NAME_RE, cls: 'hl-name' }); }
+
+		function wrapMatches(root, re, cls){
+			const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+			const textNodes = [];
+			let n;
+			while ((n = walker.nextNode())) { if (n.nodeValue) textNodes.push(n); }
+			for (const node of textNodes){
+				let txt = node.nodeValue;
+				let m;
+				const local = new RegExp(re.source, re.flags);
+				let last = 0;
+				const frags = [];
+				while ((m = local.exec(txt))){
+					const start = m.index;
+					const end = start + m[0].length;
+					if (start > last) frags.push(document.createTextNode(txt.slice(last, start)));
+					const mark = document.createElement('mark');
+					mark.className = cls;
+					mark.textContent = m[0];
+					frags.push(mark);
+					last = end;
+					if (m[0].length === 0) { local.lastIndex++; }
+				}
+				if (frags.length){
+					if (last < txt.length) frags.push(document.createTextNode(txt.slice(last)));
+					const parent = node.parentNode;
+					for (const f of frags) parent.insertBefore(f, node);
+					parent.removeChild(node);
+				}
+			}
+		}
+
+		for (const {re, cls} of rules){ wrapMatches(container, re, cls); }
+		return container.innerHTML;
+	}
+
+	function updateLegend(){
+		document.getElementById('piiLegend').innerHTML = `
+			<span style="background:#ffebee; padding:2px 4px;">Name</span>
+			<span style="background:#fff8e1; padding:2px 4px;">Email</span>
+			<span style="background:#e8f5e9; padding:2px 4px;">Phone</span>
+			<span style="background:#e3f2fd; padding:2px 4px;">Address</span>
+			<span style="background:#f3e5f5; padding:2px 4px;">URL</span>
+		`;
+	}
+
+	function getEditorText(){
+		const editor = document.getElementById('rawEditor');
+		// Use textContent to get clean text; normalize NBSP and CRLF
+		const text = (editor.textContent || '')
+			.replace(/\u00A0/g, ' ')
+			.replace(/\r\n/g, '\n');
+		return text;
+	}
+
+	function setEditorText(text){
+		const editor = document.getElementById('rawEditor');
+		editor.innerHTML = highlightPII(text);
+	}
+
+	function renderRaw(){
+		updateLegend();
+		currentRawText = getEditorText();
+		setEditorText(currentRawText);
+	}
+
+	document.getElementById('candidateName').addEventListener('input', (e)=>{
+		setNameRegexFromInput(e.target.value);
+		renderRaw();
+	});
+
+	// Experience Level custom toggle
+	const levelSel = document.getElementById('experienceLevel');
+	levelSel.addEventListener('change', ()=>{
+		document.getElementById('experienceCustomRow').style.display = (levelSel.value === 'Custom') ? 'block' : 'none';
+	});
+
+	// Debounce input rendering to avoid caret jumps
+	let inputTimer = null;
+	document.getElementById('rawEditor').addEventListener('input', ()=>{
+		if (inputTimer) clearTimeout(inputTimer);
+		inputTimer = setTimeout(()=>{
+			renderRaw();
+		}, 120);
+	});
+
+	const undoStack = [];
+	document.getElementById('deleteHighlightedBtn').addEventListener('click', ()=>{
+		// Save current state for undo
+		undoStack.push(getEditorText());
+		// Remove any matched PII from the editable text
+		let t = getEditorText();
+		if (FULLNAME_RE) t = t.replace(FULLNAME_RE, '');
+		if (NAME_RE) t = t.replace(NAME_RE, '');
+		t = t.replace(EMAIL_RE, '')
+			 .replace(PHONE_RE, '')
+			 .replace(ADDRESS_RE, '')
+			 .replace(URL_RE, '');
+		// Collapse extra whitespace from removals
+		t = t.replace(/\s{2,}/g, ' ').replace(/\n\s+/g, '\n').trim();
+		setEditorText(t);
+	});
+
+	document.getElementById('undoBtn').addEventListener('click', ()=>{
+		const prev = undoStack.pop();
+		if (typeof prev === 'string') {
+			setEditorText(prev);
+		}
+	});
+
+	document.getElementById('continueBtn').addEventListener('click', async ()=>{
+		const candidateName = document.getElementById('candidateName').value.trim();
+		const candidateTitle = document.getElementById('candidateTitle').value.trim();
+		const honorific = document.getElementById('honorific').value;
+		const experienceLevel = document.getElementById('experienceLevel').value;
+		const experienceCustom = document.getElementById('experienceCustom').value.trim();
+		const text = getEditorText();
+		const payload = { run_dir: currentRunDir, text, candidate_name: candidateName, title: candidateTitle, experience_level: experienceLevel, experience_custom: experienceCustom, honorific };
+		// Hide the text viewer panel immediately
+		document.getElementById('piiStep').style.display = 'none';
+		startProgress();
+		try{
+			const res = await fetch('/api/process_text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+			if (!res.ok){
+				const err = await res.json().catch(()=>({}));
+				out.innerHTML = `<p style="color:#c00;">Error: ${err.detail || res.statusText}</p>`;
+				return;
+			}
+			const data = await res.json();
+			out.innerHTML = `
+				<p><a href="${data.docx_url}" target="_blank">Download DOCX</a></p>
+			`;
+		} catch (e) {
+			out.innerHTML = `<p style="color:#c00;">An unexpected error occurred.</p>`;
+		} finally {
+			finishProgress();
+		}
+	});
+
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		btn.disabled = true;
+		out.innerHTML = '';
+		const fd = new FormData(form);
+		startProgress();
+		try {
+			const res = await fetch('/api/ingest', { method: 'POST', body: fd });
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				out.innerHTML = `<p style="color:#c00;">Error: ${err.detail || res.statusText}</p>`;
+				return;
+			}
+			const data = await res.json();
+			currentRunDir = data.run_dir;
+			currentRawText = data.raw_text || '';
+			document.getElementById('piiStep').style.display = 'block';
+			setEditorText(currentRawText);
+			renderRaw();
+		} catch (e) {
+			out.innerHTML = `<p style="color:#c00;">An unexpected error occurred.</p>`;
+		} finally {
+			finishProgress();
+			btn.disabled = false;
+		}
+	});
+
+	// API key UI
+	const keyPanel = document.getElementById('apiKeyPanel');
+	const keyStatus = document.getElementById('keyStatus');
+	const toggleKey = document.getElementById('toggleKey');
+	async function refreshKeyStatus(){
+		try {
+			const res = await fetch('/api/openai_key/status');
+			const data = await res.json();
+			keyStatus.textContent = data.present ? 'Key: set' : 'Key: not set';
+		} catch {
+			keyStatus.textContent = 'Key: unknown';
+		}
+	}
+	refreshKeyStatus();
+	toggleKey.addEventListener('click', ()=>{
+		keyPanel.style.display = keyPanel.style.display === 'none' ? 'block' : 'none';
+	});
+	document.getElementById('cancelKeyBtn').addEventListener('click', ()=>{
+		keyPanel.style.display = 'none';
+		const el = document.getElementById('apiKeyInput');
+		if (el) el.value = '';
+	});
+	document.getElementById('saveKeyBtn').addEventListener('click', async ()=>{
+		const input = document.getElementById('apiKeyInput');
+		const apiKey = input.value.trim();
+		if (!apiKey){ alert('Please paste your OpenAI API key.'); return; }
+		try{
+			const res = await fetch('/api/openai_key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey }) });
+			if (!res.ok){
+				const err = await res.json().catch(()=>({}));
+				alert('Failed to save key: ' + (err.detail || res.statusText));
+				return;
+			}
+			keyPanel.style.display = 'none';
+			input.value = '';
+			refreshKeyStatus();
+			alert('API key saved. You can start using the app.');
+		} catch {
+			alert('Network error while saving key.');
+		}
+	});
+	</script>
+	<style>
+	/* name = red, email = yellow, phone = green, address = blue, url = purple */
+	mark.hl-name { background: #ffebee; }
+	mark.hl-email { background: #fff8e1; }
+	mark.hl-phone { background: #e8f5e9; }
+	mark.hl-address { background: #e3f2fd; }
+	mark.hl-url { background: #f3e5f5; }
+	</style>
+</body>
+</html>
+

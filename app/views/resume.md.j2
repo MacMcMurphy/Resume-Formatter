@@ -1,0 +1,78 @@
+{% if data.summary %}
+::: {custom-style="{{ styles['summary'] }}"}
+{{ data.summary }}
+:::
+{% endif %}
+
+::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+:::
+
+::: {custom-style="{{ styles['section_heading'] }}"}
+Technical Skills
+:::
+{% if data.core_skills %}
+::: {custom-style="{{ styles['skills_body'] }}"}
+{{ data.core_skills | join(", ") }}
+:::
+{% endif %}
+
+::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+:::
+
+{% if data.education %}
+::: {custom-style="{{ styles['section_heading'] }}"}
+Education and Certifications
+:::
+{% for e in data.education %}
+:::: {custom-style="{{ styles['summary'] }}"}
+{{ e.degree ~ (', ' ~ e.school if e.school) ~ (', ' ~ e.grad_date if e.grad_date) }}
+::::
+{% endfor %}
+{% endif %}
+
+::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+:::
+
+{% if data.certifications %}
+:::: {custom-style="{{ styles['summary'] }}"}
+{{ data.certifications | join(', ') }}
+::::
+:::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+::::
+{% endif %}
+
+:::: {custom-style="{{ styles['section_heading'] }}"}
+Professional Experience
+::::
+:::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+::::
+{% for r in data.experience %}
+{% if not loop.first %}
+:::: {custom-style="{{ styles['spacer'] }}"}
+&nbsp;
+::::
+{% endif %}
+:::: {custom-style="{{ styles['job_header'] }}"}
+{{ r.company }}[[TAB]]{{ r.start_date }} – {{ r.end_date }}
+::::
+{% if r.role %}
+:::: {custom-style="{{ styles['role_header'] }}"}
+{{ r.role }}
+::::
+{% endif %}
+{% if r.summary %}
+{{ r.summary }}
+{% endif %}
+
+{% if r.bullets %}
+{% for b in r.bullets %}
+- {{ b }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
