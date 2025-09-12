@@ -4,8 +4,10 @@ A tiny desktop app that turns any PDF resume into a clean, standardized Word doc
 
 ## Download (macOS)
 
-- Direct download (Apple Silicon):
+- Apple Silicon (arm64):
   https://github.com/MacMcMurphy/Resume-Formatter/releases/download/v0.2.0/Resume-Formatter-macOS-arm64-v0.2.0.zip
+- Intel (x86_64):
+  https://github.com/MacMcMurphy/Resume-Formatter/releases/download/v0.2.1/Resume-Formatter-macOS-x86_64-v0.2.1.zip
 
 Unzip, then double‑click "Resume Formatter.app" to launch.
 
