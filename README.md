@@ -1,6 +1,8 @@
 # Resume-Formatter
 
-👉 Direct download (macOS, Apple Silicon): [Download the app](https://github.com/MacMcMurphy/Resume-Formatter/releases/latest/download/Resume-Formatter-macOS-arm64-v0.2.0.zip)
+👉 Download (macOS, Apple Silicon): [Releases page](https://github.com/MacMcMurphy/Resume-Formatter/releases)
+   
+   Direct link to the current version: [v0.2.0 zip](https://github.com/MacMcMurphy/Resume-Formatter/releases/download/v0.2.0/Resume-Formatter-macOS-arm64-v0.2.0.zip)
 
 ### Download and run (macOS)
 
