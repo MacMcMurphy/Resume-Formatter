@@ -27,13 +27,7 @@ jobs:
             echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
             echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           else
-            VERSION=$(python - <<'PY'
-from pathlib import Path
-import re
-m=re.search(r'APP_VERSION\s*=\s*"([^"]+)"', Path('app/config.py').read_text())
-print(m.group(1))
-PY
-)
+            VERSION=$(python -c "import re, pathlib; print(re.search(r'APP_VERSION\\s*=\\s*\\\"([^\\\"]+)\\\"', pathlib.Path('app/config.py').read_text()).group(1))")
             echo "VERSION=${VERSION}" >> $GITHUB_ENV
             echo "TAG=v${VERSION}" >> $GITHUB_ENV
           fi
