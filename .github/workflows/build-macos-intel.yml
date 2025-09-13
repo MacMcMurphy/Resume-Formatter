@@ -72,14 +72,15 @@ jobs:
           for i in {1..30}; do curl -sf http://127.0.0.1:8010/api/health && OK=1 && break || sleep 1; done;
           kill $PID || true; test "$OK" = "1"
 
-      - name: Stage pandoc binary (download x86_64)
+      - name: Stage pandoc binary (macOS zip)
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p build/pandoc/mac
-          curl -L -o /tmp/pandoc.tar.gz https://github.com/jgm/pandoc/releases/download/3.5/pandoc-3.5-macOS-x86_64.tar.gz
-          tar -xzf /tmp/pandoc.tar.gz -C /tmp
-          PANDOC_BIN=$(find /tmp -type f -path "*/bin/pandoc" | head -n1)
+          curl -L -o /tmp/pandoc-mac.zip https://github.com/jgm/pandoc/releases/download/3.5/pandoc-3.5-macOS.zip
+          rm -rf /tmp/pandocmac && mkdir -p /tmp/pandocmac
+          unzip -q /tmp/pandoc-mac.zip -d /tmp/pandocmac
+          PANDOC_BIN=$(find /tmp/pandocmac -type f -path "*/bin/pandoc" | head -n1)
           cp "$PANDOC_BIN" build/pandoc/mac/pandoc
 
       - name: Build app (x86_64)
