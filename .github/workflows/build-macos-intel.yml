@@ -61,6 +61,32 @@ print('httpx version:', v)
 sys.exit(0 if v.startswith('0.27.') else 1)
 PY
 
+      - name: Smoke test OpenAI client init (no network call)
+        shell: bash
+        env:
+          RESUME_FORMATTER_OPENAI_API_KEY: dummy-key
+        run: |
+          python - <<'PY'
+import os
+os.environ['RESUME_FORMATTER_OPENAI_API_KEY'] = os.environ.get('RESUME_FORMATTER_OPENAI_API_KEY', 'dummy-key')
+from app.services.llm import get_openai_client, reset_openai_client
+reset_openai_client()
+client = get_openai_client()
+print('OpenAI client OK:', type(client))
+PY
+
+      - name: Smoke test app health endpoint
+        shell: bash
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8010 --log-level warning &
+          PID=$!
+          # wait for server
+          for i in {1..30}; do
+            curl -sf http://127.0.0.1:8010/health && OK=1 && break || sleep 1
+          done
+          kill $PID || true
+          test "$OK" = "1"
+
       - name: Stage pandoc binary
         run: |
           mkdir -p build/pandoc/mac
