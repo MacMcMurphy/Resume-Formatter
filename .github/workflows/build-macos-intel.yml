@@ -47,8 +47,14 @@ PY
         shell: bash
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install -r requirements.txt pyinstaller
-          brew install pandoc
+          pip install -r requirements.txt pyinstaller==6.10.0
+
+      - name: Diagnostics (python, pip, packages)
+        shell: bash
+        run: |
+          python -V
+          uname -a
+          pip list
 
       - name: Verify httpx version (must be 0.27.x)
         shell: bash
@@ -87,10 +93,15 @@ PY
           kill $PID || true
           test "$OK" = "1"
 
-      - name: Stage pandoc binary
+      - name: Stage pandoc binary (download x86_64)
+        shell: bash
         run: |
+          set -euxo pipefail
           mkdir -p build/pandoc/mac
-          cp "$(which pandoc)" build/pandoc/mac/pandoc
+          curl -L -o /tmp/pandoc.tar.gz https://github.com/jgm/pandoc/releases/download/3.5/pandoc-3.5-macOS-x86_64.tar.gz
+          tar -xzf /tmp/pandoc.tar.gz -C /tmp
+          PANDOC_BIN=$(find /tmp -type f -path "*/bin/pandoc" | head -n1)
+          cp "$PANDOC_BIN" build/pandoc/mac/pandoc
 
       - name: Build app (x86_64)
         shell: bash
