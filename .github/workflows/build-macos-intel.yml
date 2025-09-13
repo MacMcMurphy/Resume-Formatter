@@ -5,15 +5,20 @@ permissions:
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
   release:
     types: [published]
 
 jobs:
   build-intel:
-    runs-on: macos-13
+    runs-on: macos-12
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify runner arch
+        run: uname -m
 
       - name: Set version/tag
         shell: bash
@@ -44,6 +49,17 @@ PY
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           brew install pandoc
+
+      - name: Verify httpx version (must be 0.27.x)
+        shell: bash
+        run: |
+          python - <<'PY'
+import sys
+import httpx
+v = getattr(httpx, '__version__', '')
+print('httpx version:', v)
+sys.exit(0 if v.startswith('0.27.') else 1)
+PY
 
       - name: Stage pandoc binary
         run: |
